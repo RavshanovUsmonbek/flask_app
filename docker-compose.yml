@@ -9,8 +9,13 @@ services:
     networks:
       - mynetwork
     volumes:
-      - ./app:/app
-      - ./.env:/app/.env
+      - ./src:/src
+      - ./.env:/src/.env
+    depends_on:
+      - db
+      - rabbitmq
+    env_file:
+      - ./.env
 
   db:
     image: postgres
@@ -26,6 +31,58 @@ services:
       - db_data:/var/lib/postgresql/data
     networks:
       - mynetwork
+
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBIT_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBIT_PASSWORD}
+    networks:
+      - mynetwork
+    ports:
+      - 15672:15672
+      - 5672:5672
+    container_name: message-broker
+
+  celery_worker:
+    build: .
+    restart: always
+    command: "celery -A celery_runner worker --loglevel=info"
+    networks:
+      - mynetwork
+    volumes:
+      - ./src:/src
+      - ./.env:/src/.env
+    depends_on:
+      - web
+      - rabbitmq
+
+  celery_beat:
+    build: .
+    restart: always
+    command: "celery -A celery_runner beat --loglevel=info"
+    networks:
+      - mynetwork
+    volumes:
+      - ./src:/src
+      - ./.env:/src/.env
+    depends_on:
+      - web
+      - rabbitmq
+
+  flower:
+    build: ./
+    command: "celery -A celery_runner flower --loglevel=info"
+    networks:
+      - mynetwork
+    ports:
+      - 5555:5555
+    depends_on:
+      - rabbitmq
+      - celery_worker
+    volumes:
+      - ./src:/src
+      - ./.env:/src/.env
 
 volumes:
   db_data:
